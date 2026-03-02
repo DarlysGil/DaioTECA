@@ -83,6 +83,7 @@ let currentFontSize = 1.1;
 let bookGrid, searchInput, categoryFilters, loginBtn, logoutBtn, userProfile, usernameDisplay, authModal, authForm, closeModal, usernameInput, passwordInput, authError;
 let readerModal, readerTitle, bookText, closeReader, increaseFont, decreaseFont, ttsBtn;
 let currentUtterance = null;
+let wakeLock = null;
 
 function init() {
     // Basic elements
@@ -236,18 +237,44 @@ function startTTS() {
     currentUtterance.onstart = () => {
         ttsBtn.textContent = '⏹ Detener';
         ttsBtn.classList.add('speaking');
+        requestWakeLock();
     };
 
     currentUtterance.onend = () => {
         ttsBtn.textContent = '🔊 Narrar';
         ttsBtn.classList.remove('speaking');
+        releaseWakeLock();
     };
 
     window.speechSynthesis.speak(currentUtterance);
 }
 
+// Screen Wake Lock API Functions
+async function requestWakeLock() {
+    try {
+        if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            console.log('Screen Wake Lock is active');
+
+            wakeLock.addEventListener('release', () => {
+                console.log('Screen Wake Lock was released');
+            });
+        }
+    } catch (err) {
+        console.error(`${err.name}, ${err.message}`);
+    }
+}
+
+async function releaseWakeLock() {
+    if (wakeLock !== null) {
+        await wakeLock.release();
+        wakeLock = null;
+    }
+}
+
 function stopTTS() {
     window.speechSynthesis.cancel();
+    releaseWakeLock();
     if (ttsBtn) {
         ttsBtn.textContent = '🔊 Narrar';
         ttsBtn.classList.remove('speaking');
@@ -381,3 +408,10 @@ if (document.readyState === 'loading') {
 } else {
     init();
 }
+
+// Handle visibility change for Wake Lock
+document.addEventListener('visibilitychange', async () => {
+    if (wakeLock !== null && document.visibilityState === 'visible') {
+        await requestWakeLock();
+    }
+});
