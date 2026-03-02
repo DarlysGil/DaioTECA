@@ -214,7 +214,21 @@ function openReader(bookId) {
 
     stopTTS(); // Reset speech when opening new book
     readerTitle.textContent = book.title;
-    bookText.innerHTML = book.content || "<p>Este libro no tiene contenido disponible.</p>";
+
+    // Process content to wrap paragraphs in reading-segment divs for highlighting
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = book.content || "<p>Este libro no tiene contenido disponible.</p>";
+    const paragraphs = tempDiv.querySelectorAll('p');
+
+    bookText.innerHTML = '';
+    paragraphs.forEach((p, index) => {
+        const span = document.createElement('p');
+        span.className = 'reading-segment';
+        span.id = `segment-${index}`;
+        span.innerHTML = p.innerHTML;
+        bookText.appendChild(span);
+    });
+
     readerModal.classList.add('visible');
     bookText.scrollTop = 0;
 }
@@ -234,15 +248,48 @@ function startTTS() {
     currentUtterance = new SpeechSynthesisUtterance(text);
     currentUtterance.lang = 'es-ES'; // Set to Spanish
 
+    const segments = Array.from(bookText.querySelectorAll('.reading-segment'));
+    const segmentOffsets = [];
+    let currentOffset = 0;
+
+    segments.forEach(seg => {
+        const segText = seg.innerText;
+        segmentOffsets.push({
+            start: currentOffset,
+            end: currentOffset + segText.length,
+            element: seg
+        });
+        currentOffset += segText.length + 2; // +2 for paragraph spacing/newlines in innerText
+    });
+
     currentUtterance.onstart = () => {
         ttsBtn.textContent = '⏹ Detener';
         ttsBtn.classList.add('speaking');
         requestWakeLock();
     };
 
+    currentUtterance.onboundary = (event) => {
+        if (event.name === 'word') {
+            const charIndex = event.charIndex;
+            const activeSegment = segmentOffsets.find(s => charIndex >= s.start && charIndex <= s.end);
+
+            if (activeSegment) {
+                segments.forEach(s => s.classList.remove('highlight'));
+                activeSegment.element.classList.add('highlight');
+
+                // Auto-scroll to keep element in view
+                activeSegment.element.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+            }
+        }
+    };
+
     currentUtterance.onend = () => {
         ttsBtn.textContent = '🔊 Narrar';
         ttsBtn.classList.remove('speaking');
+        segments.forEach(s => s.classList.remove('highlight'));
         releaseWakeLock();
     };
 
@@ -279,6 +326,8 @@ function stopTTS() {
         ttsBtn.textContent = '🔊 Narrar';
         ttsBtn.classList.remove('speaking');
     }
+    // Clear highlights
+    document.querySelectorAll('.reading-segment').forEach(s => s.classList.remove('highlight'));
 }
 
 function changeFontSize(delta) {
